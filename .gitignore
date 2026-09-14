@@ -1,0 +1,14 @@
+# 开发过程资产（本项目维护，不上传）
+backups/
+任务单/
+logs/
+docs/
+staging-upload/
+.git/
+
+# DSH 运行时
+.installed-version
+
+# 系统
+.DS_Store
+Thumbs.db

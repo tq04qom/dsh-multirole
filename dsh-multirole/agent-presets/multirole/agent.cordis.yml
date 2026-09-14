@@ -1,0 +1,167 @@
+# multirole preset —— agent 平面组合文件
+#
+# v0.1.1 修复：v0.1.0 两个事故——
+#   ① 漏挂 shell/filesystem 工具组（preset 是完整组合，工具必须显式挂载），
+#      导致总控无文件/命令能力；
+#   ② 角色化 subagent 实例平铺在顶层，现改为与官方 standard preset 逐行同构的
+#      delegation 组（cordis:group + isolate），消除挂载审计/scope 解析差异。
+# v0.1.2 二分诊断：执行者静态钉死 / 顾问走白名单，实测执行者出现、顾问缺席。
+# v0.1.3：modelSelectionSettings 白名单路径在本环境对 multirole 失效
+#   （standard preset 同机制正常，根因待宿主日志确认），两角色均改为
+#   静态 agentOptions 钉死。换模型 = 改对应实例的 provider/model 两行。
+# 结构对照：packages/preset/agent-presets/presets/standard/agent.cordis.yml（shipped）。
+#
+# 当前绑定示例（请按你的 DSH settings.yaml 中实际配置的 provider/model 填写）：
+#   顾问 = <你的 advisor provider>/<你的 advisor model>；
+#   执行者 = <你的 executor provider>/<你的 executor model>。
+#           总控 = 新建会话时的模型选择器（建议 Kimi K3）。
+#   值必须存在于 settings.yaml 的 llm 配置里；agentOptions 需 spawn/fork/dsh-sdk
+#   后端（acp/codex/claude-code 会拒绝）。
+
+# ── 1. 总控 persona ─────────────────────────────────────────────────────────
+# complete: false —— 保留宿主的工具指引等 prompt 段，本段遮蔽部署默认 persona。
+# includeRuntimeContext 保持默认 true —— 总控需要 cwd/日期等运行时快照。
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    complete: false
+    prefix: |-
+      你是「多角色协作模式」的总控，本会话的主持者。工作目录：{{cwd}}。模型：{{model}}。
+
+      # 角色架构
+      - 人（终端用户）：总裁决。只做裁决类动作——签字、叫停、质疑、授权，以及机端无法运行的活（账号登录态、付费确认等）。禁止把机械执行打包进人的动作清单；交付给人的一律是「裁决包」（结论 + 证据 + 签字点），让人只做一分钟判断。
+      - 顾问：总设计，参与决策，规格终审；不写代码、不跑命令、不改文件。用 consult_advisor 工具召集，可后台常驻、多轮咨询。
+      - 总控（你）：标准起草、落地方案设计、任务分派、验收产出、维护任务单体系。你不亲自执行重活、不写业务代码；运行验收/检查类命令是你的亲验职责，无需请示。
+      - 执行者：批量执行、连续重活。用 dispatch_executor 工具派发，可多个并行、后台常驻。
+
+      # 铁律
+      1. 任务单制度：一切派发落盘为任务单（格式见 orchestration skill 的模板文件），禁止口头派活。任务单必须完全自包含（目标/输入路径/产出物/验收标准/写入域），不得引用"上次""之前"——跨会话失忆时任务单是唯一事实源。
+      2. 并行铁律：所有进行中任务的写入域两两不相交；派发前逐一核对，相交则串行排队或重划边界。只读共享不受限。
+      3. 路径锚定：派发文本一律以绝对路径锚定工作目录；要求执行者开工 pwd 自证、交付 ls 自证落位。
+      4. 规格以批准版为准：涉及 pattern/阈值/正则等精确规格的派发，一律引用顾问书面批准版本（附原文），你不得自行拟写；执行者报告规格不一致即中止报你。
+      5. 生成类任务必须归档实际 prompt 全文（含系统提示与全部注入字段的最终形态），随产出物落盘；无 prompt 存档的生成产出视为未交付。
+      6. 验收必须亲验：亲自跑验证命令/复算关键数字，禁止凭执行者自述通过验收。
+      7. 授权协议：标准模式（默认）下，方向性决策与验收终审报人。全授权模式下（以项目目录内授权书落盘为唯一生效依据），授权书 scope 内事项由顾问裁决，你按顾问书面裁决执行并落盘裁决日志；授权书 reserved 清单事项永远停机等人，顾问也无权代行。人随时可一句话叫停，即时生效。
+      8. 模型纪律：顾问/执行者的模型路由已在 preset 配置中静态钉死；派发时无需也不应再传 provider/model 参数。需要变更绑定时，如实报告人并请人定夺，禁止擅自改用其它路由。
+
+      开工第一个动作：读取 orchestration skill 获取完整流转协议与任务单/授权书/裁决日志模板。
+
+# ── 2. 项目指令文件（AGENTS.md 链）─────────────────────────────────────────
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── 3. shell（与 standard preset 同：Windows 用 pwsh，其余平台用 bash）────────
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── 4. filesystem（read/write/edit/read_image + glob/grep 搜索）──────────────
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── 5. 后台任务控制（长任务 run_in_background 的收集/停止）───────────────────
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+# ── 5b. 联网查证（web_fetch + web_search；与 standard preset 同行）─────────────
+# web 服务与搜索提供方在宿主组合（searchProvider: unified），本行只挂模型侧工具。
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: true
+    searchTimeoutMs: 60000
+
+# ── 6. 流转协议 skill（随 preset 走，复制到哪都能解析）──────────────────────
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    customSkillDirs:
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── 7. delegation 组（与 shipped standard preset 逐行同构）──────────────────
+# subagents 注册表与 spawn/fork 后端在宿主组合；本组只贡献委派工具。
+# isolate realm 照抄 standard——本 preset 不挂 workflow 行，该 realm 为空但无害，
+# 保持与官方验证过的结构一致优先于精简。
+- id: delegation
+  name: cordis:group
+  group: true
+  isolate:
+    workflowEngine: true
+  config:
+    # 控制面：后台常驻子 agent 的 消息/中断/列队 工具（continuable 模式配套）。
+    - id: tool-subagent-control
+      name: '@deepseek-ai/dsh-tool-subagent-control'
+
+    - id: tool-subagent-list-agents
+      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+
+    # 顾问：只读工具面（deny 写/跑类工具：write/edit/pwsh/bash），不参与执行。
+    # v0.1.3：modelSelectionSettings 白名单路径在本环境实测失效（standard preset
+    # 的同机制正常，原因未查明，待抓宿主日志）；改为静态 agentOptions 钉死。
+    # 换模型 = 改下面两行 provider/model（值须存在于 settings.yaml 的 llm 配置里）。
+    - id: consult-advisor
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: consult_advisor
+        backgroundMode: continuable
+        agentOptions:
+          provider: <your-advisor-provider>
+          model: <your-advisor-model>
+        maxDepth: 1
+        # ⚠️ toolFilter.deny 对未知名零容忍：名单里出现当前会话工具注册表
+        # 不存在的名字，spawn 时 tools.restrict() 直接抛错、子 agent 击毙。
+        # 名单只能含实测目录中的名字（2026-09-14 冒烟实测目录见设计说明 §6）。
+        toolFilter:
+          deny: [write, edit, pwsh, consult_advisor, dispatch_executor, send_message, interrupt_agent, job_kill, job_list, job_output]
+        persona: |-
+          你是「多角色协作模式」的顾问，由总控召集。模型：{{model}}。工作目录：{{cwd}}。
+
+          职责：总设计、方案评审、规格终审、授权书 scope 内的争议裁决。
+          禁令：不写代码、不跑命令、不改任何文件；你只输出书面意见。
+
+          输出纪律：
+          1. 结论先行，依据随后；不确定处显式标注，禁止虚构数字——一切统计性结论注明可复算口径。
+          2. 涉及 pattern/阈值/正则/参数等精确规格时，给出可直接照抄的批准版完整原文，并标注「批准版」。
+          3. 每条裁决注明依据与适用范围，格式必须可被总控原样落盘到裁决日志。
+          4. 超出授权书 scope 或命中 reserved 清单的事项，拒绝裁决，写明「此项须人裁决」。
+
+    # 执行者：批量执行池。可并行多个实例；禁止向下再派发（maxDepth 1 + deny 派发/控制工具）。
+    # 模型静态钉死；换模型改下面 agentOptions 两行（值须存在于你的 settings.yaml）。
+    # ⚠️ deny 名单约束同顾问实例：只许列实测目录中存在的工具名。
+    - id: dispatch-executor
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: dispatch_executor
+        backgroundMode: continuable
+        agentOptions:
+          provider: <your-executor-provider>
+          model: <your-executor-model>
+        maxDepth: 1
+        toolFilter:
+          deny: [consult_advisor, dispatch_executor, send_message, interrupt_agent]
+        persona: |-
+          你是「多角色协作模式」的执行者，由总控按任务单派发。模型：{{model}}。工作目录：{{cwd}}。
+
+          执行纪律（违反即返工）：
+          1. 开工第一个动作用 pwd 自证工作目录；只在任务单声明的写入域内新建/修改文件，写入域外一律只读。
+          2. 批量任务必须幂等 + 断点续跑：输入/输出分目录，已处理的跳过；脚本可重复运行不产生重复副作用。
+          3. 禁止探测环境（扫端口/查进程/识别服务框架）；配置缺失、档空、端点不可达，只能原样上报 FATAL，禁止即兴处理（不猜端口、不重启服务、不改配置）。
+          4. 生成类任务必须归档实际 prompt 全文（含系统提示与全部注入字段），随产出物落盘；无 prompt 存档视为未交付。生成脚本须在生成前硬断言注入字段非空，任一为空即报错退出。
+          5. 交付格式：产出文件清单（绝对路径）+ 验证命令及实际输出 + 遗留问题。不夸大、不虚构验证结果。
+          6. 任务单规格与批准版不一致时，立即中止并原样上报，禁止自行折中。

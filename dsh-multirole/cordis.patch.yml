@@ -1,0 +1,23 @@
+# dsh-multirole bundle patch 层（MVP：空层）。
+#
+# MVP 的全部能力都在 preset（agent-presets/multirole/）里，本层不插入任何行。
+# 本文件保留给 v0.2 调度插件（lib/index.js）与可选的部署级覆盖。
+# 下面是备好注释的模板，需要时取消注释（注意：patch 对同 id 行是 config 整行
+# 替换，不是深度合并——覆盖前必须重述该行需要保留的全部字段）。
+#
+# ── 模板 A：部署级钉死「全授权」权限预设（默认不需要，治理授权见授权书） ──
+# - id: sandbox-policy
+#   config:
+#     mode: danger-full-access
+#     workspaceRoot: !!js process.cwd()
+# - id: approval
+#   config:
+#     policy: never
+# - id: permission
+#   config:
+#     defaultPreset: danger-full-access
+#     presets:
+#       read-only:          { sandbox: read-only,          approval: ask }
+#       workspace-write:    { sandbox: workspace-write,    approval: ask }
+#       danger-full-access: { sandbox: danger-full-access, approval: never }
+[]
