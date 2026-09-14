@@ -112,6 +112,24 @@ dsh-multirole/
 
 ---
 
+## Contributing / 贡献
+
+欢迎通过 Issue 或 Pull Request 参与。
+
+- **Bug 报告**：新开 Issue，附复现步骤与环境信息（DSH 版本、操作系统）
+- **功能建议**：新开 Issue，先讨论再实现
+- **代码贡献**：Fork → 修改 → Pull Request（main 分支受保护，强制 PR + 审批）
+
+### 贡献红线 / Contribution Guidelines
+
+- **模型路由保持占位符**：`agent.cordis.yml` 中的 provider/model 一律用 `<your-provider>` / `<your-model>`，禁止提交个人模型配置
+- **orchestration skill 不拆分**：不要新增独立 skill（verification / prompt-archiving 等），新规则作为 SKILL.md 的资源文件落入同一目录
+- **协议条款变更须说明依据**：修改 SKILL.md 的规则性语句时，PR 描述中必须写明依据（事故记录 / 设计意见书 / 用户裁决）
+- **中文文件编码 UTF-8**：所有 `.md` 文件保持 UTF-8 编码，不要用 ANSI
+- **不提交个人路径**：代码和文档中的路径一律用占位符（`<dshHome>`、`<插件仓库路径>` 等）
+
+---
+
 ## License
 
 MIT
